@@ -37,7 +37,6 @@ function watch(obj, name) {
             return val;
         },
         set(target, prop, value) {
-            console.log(`[Proxy] 设置属性: ${name}.${String(prop)} = ${value}`);
             return Reflect.set(target, prop, value);
         }
     });

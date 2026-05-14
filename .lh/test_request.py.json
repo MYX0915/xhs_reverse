@@ -1,0 +1,22 @@
+{
+    "sourceFile": "test_request.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1777054071937,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1777054077031,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -21,8 +21,10 @@\n     a1 = cookies.get('a1')\n     \n     print(f\"[*] Generating signature for path: {full_api_path}\")\n     xs, xt, xs_common = generate_xs_xs_common(a1, full_api_path, \"\")\n+    print(f\"[+] Generated X-s: {xs}\")\n+    print(f\"[+] Generated X-t: {xt}\")\n \n     headers = {\n         \"accept\": \"application/json, text/plain, */*\",\n         \"content-type\": \"application/json;charset=UTF-8\",\n"
+                }
+            ],
+            "date": 1777054071937,
+            "name": "Commit-0",
+            "content": "import requests\nimport json\nfrom main import generate_xs_xs_common, generate_x_b3_traceid, trans_cookies\n\ndef test_xhs_request():\n    # 修复点 1：手动处理转码，确保计算 MD5 的路径与发送给服务器的一致\n    note_id = \"69e204690000000021038d7b\"\n    # 小红书服务器接收的是转码后的 %3D，签名计算也必须基于转码后的字符串\n    xsec_token = \"AB6ArQKxATnegrNcZjtGPQ7oOHgVEdw-M9ObsbZJYS6Ho=\".replace(\"=\", \"%3D\")\n    \n    # 手动拼接完整的带参数路径 (供签名使用)\n    query_str = f\"note_id={note_id}&cursor=&top_comment_id=&image_formats=jpg,webp,avif&xsec_token={xsec_token}\"\n    full_api_path = f\"/api/sns/web/v2/comment/page?{query_str}\"\n    \n    # 拼接完整的请求 URL (供 requests 使用)\n    full_request_url = f\"https://edith.xiaohongshu.com{full_api_path}\"\n    \n    cookie_str = \"abRequestId=79581748-f3e1-5bac-b2ac-99b3c29fba4b; xsecappid=xhs-pc-web; a1=19d57e8cd67gh1984uuqclxo276h7q97joljzvk9h50000643170; webId=7d55e4e1c9d6a5edc976170f19d84ae8; gid=yjf2WdYfWqVSyjf2WdYSflhTKWkxyjY477AS1jx1ClJWKV28xWAjWu888K4qyW88W222dj8j; webBuild=6.7.4; web_session=040069b7fa52ea22690f4002de3b4bb3d7067a; websectiga=cf46039d1971c7b9a650d87269f31ac8fe3bf71d61ebf9d9a0a87efb414b816c; sec_poison_id=7f0db15c-4abd-4dff-99f8-2ccca0d76c5e; loadts=1777049241038; ets=1777049252901\"\n    \n    cookies = trans_cookies(cookie_str)\n    a1 = cookies.get('a1')\n    \n    print(f\"[*] Generating signature for path: {full_api_path}\")\n    xs, xt, xs_common = generate_xs_xs_common(a1, full_api_path, \"\")\n\n    headers = {\n        \"accept\": \"application/json, text/plain, */*\",\n        \"content-type\": \"application/json;charset=UTF-8\",\n        \"origin\": \"https://www.xiaohongshu.com\",\n        \"referer\": \"https://www.xiaohongshu.com/\",\n        \"sec-ch-ua\": '\"Microsoft Edge\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"',\n        \"sec-ch-ua-mobile\": \"?0\",\n        \"sec-ch-ua-platform\": '\"Windows\"',\n        \"sec-fetch-dest\": \"empty\",\n        \"sec-fetch-mode\": \"cors\",\n        \"sec-fetch-site\": \"same-site\",\n        \"user-agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0\",\n        \"x-b3-traceid\": generate_x_b3_traceid(),\n        \"x-s\": xs,\n        \"x-t\": str(xt),\n        \"x-s-common\": xs_common,\n        \"x-s-v\": \"1.3.8\",\n        \"x-xray-traceid\": \"cee010dca0405e8f1c6cdc47ced87104\"\n    }\n\n    print(f\"[*] Sending request...\")\n    try:\n        # 修复点 2：直接请求完整 URL\n        response = requests.get(full_request_url, headers=headers, cookies=cookies, timeout=10)\n        print(f\"[+] Status Code: {response.status_code}\")\n        \n        res_json = response.json()\n        if res_json.get('code') == 0:\n            print(\"\\n[SUCCESS] Comments fetched successfully!\")\n            print(json.dumps(res_json, indent=2, ensure_ascii=False))\n        else:\n            print(f\"\\n[ERROR] API returned: {res_json.get('msg')} (code: {res_json.get('code')})\")\n    except Exception as e:\n        print(f\"[-] Request failed: {e}\")\n\nif __name__ == \"__main__\":\n    test_xhs_request()\n"
+        }
+    ]
+}

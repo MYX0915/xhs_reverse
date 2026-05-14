@@ -1,0 +1,22 @@
+{
+    "sourceFile": "xhs_intercept_test.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1777053967853,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1777054107107,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -0,0 +1,78 @@\n+import json\r\n+import time\r\n+import requests\r\n+from playwright.sync_api import sync_playwright\r\n+\r\n+def intercept_specific_api_and_replay():\r\n+    # 存储拦截到的精准数据\r\n+    target_data = {\r\n+        \"url\": \"\",\r\n+        \"headers\": {},\r\n+        \"cookies\": {}\r\n+    }\r\n+\r\n+    print(\"[*] 正在启动浏览器，准备精准拦截评论接口...\")\r\n+    with sync_playwright() as p:\r\n+        browser = p.chromium.launch(headless=True)\r\n+        context = browser.new_context(\r\n+            user_agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36\"\r\n+        )\r\n+        page = context.new_page()\r\n+\r\n+        def handle_request(request):\r\n+            # 精准定位评论分页接口\r\n+            if \"/api/sns/web/v2/comment/page\" in request.url and not target_data[\"url\"]:\r\n+                print(f\"[!] 成功拦截到目标请求！\")\r\n+                print(f\"    路径: ...{request.url[-80:]}\")\r\n+                target_data[\"url\"] = request.url\r\n+                target_data[\"headers\"] = request.headers\r\n+                target_data[\"cookies\"] = {c['name']: c['value'] for c in context.cookies()}\r\n+\r\n+        page.on(\"request\", handle_request)\r\n+\r\n+        # 访问笔记页面，这会触发评论接口调用\r\n+        note_url = \"https://www.xiaohongshu.com/explore/69eb1bc10000000019032401?xsec_token=ABjn3ShfSRJsT1scWcRV30M2xwrkR4s7AxovdEXerSPH0=&xsec_source=pc_feed\"\r\n+        page.goto(note_url)\r\n+        \r\n+        print(\"[*] 正在等待页面触发评论加载...\")\r\n+        # 等待 10 秒，确保异步请求发出\r\n+        for _ in range(10):\r\n+            if target_data[\"url\"]:\r\n+                break\r\n+            time.sleep(1)\r\n+        \r\n+        browser.close()\r\n+\r\n+    if not target_data[\"url\"]:\r\n+        print(\"[-] 拦截失败：页面未在规定时间内发起评论接口请求。\")\r\n+        return\r\n+\r\n+    print(f\"\\n[+] 拦截数据概览：\")\r\n+    print(f\"    - X-s: {target_data['headers'].get('x-s')[:20]}...\")\r\n+    print(f\"    - web_session 是否存在: {'web_session' in target_data['cookies']}\")\r\n+\r\n+    # --- 执行回放测试 ---\r\n+    print(f\"\\n[*] 正在执行『原样回放』测试（不使用本地签名函数）...\")\r\n+    \r\n+    # 使用拦截到的全量 Header 和全量 Cookie\r\n+    try:\r\n+        response = requests.get(\r\n+            target_data[\"url\"], \r\n+            headers=target_data[\"headers\"], \r\n+            cookies=target_data[\"cookies\"], \r\n+            timeout=10\r\n+        )\r\n+        print(f\"[+] 状态码: {response.status_code}\")\r\n+        res_json = response.json()\r\n+        \r\n+        if res_json.get('code') == 0:\r\n+            print(\"✅ 验证成功！只要拦截到的 [Cookie + X-s] 组合正确且路径匹配，回放是完全可行的。\")\r\n+            print(f\"获取到评论数: {len(res_json.get('data', {}).get('comments', []))}\")\r\n+        else:\r\n+            print(f\"❌ 还是失败了: {res_json.get('msg')} (代码: {res_json.get('code')})\")\r\n+            \r\n+    except Exception as e:\r\n+        print(f\"[-] 回放过程发生错误: {e}\")\r\n+\r\n+if __name__ == \"__main__\":\r\n+    intercept_specific_api_and_replay()\r\n"
+                }
+            ],
+            "date": 1777053967853,
+            "name": "Commit-0",
+            "content": ""
+        }
+    ]
+}
