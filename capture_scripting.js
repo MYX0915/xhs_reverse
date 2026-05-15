@@ -1,4 +1,4 @@
-/**
+﻿/**
  * capture_scripting.js
  *
  * 从 as.xiaohongshu.com/api/sec/v1/scripting 拉取安全 JS 并保存为 scripting_raw.js。
@@ -90,14 +90,10 @@ function looksLikeJs(text) {
   );
 }
 
-// ─── 主流程 ──────────────────────────────────────────────────────────────────
-async function main() {
-  const cookieStr = process.argv[2] || '';
+// ─── 核心逻辑（可被 main.js 导入） ───────────────────────────────────────────
+async function captureScripting(cookieStr) {
   const cookies   = parseCookies(cookieStr);
   const a1        = cookies['a1'] || '';
-
-  process.stderr.write(`[capture] a1=${a1.slice(0, 16)}...\n`);
-
   const API  = '/api/sec/v1/scripting';
   const body = JSON.stringify({ callFrom: 'web', callback: 'seccallback' });
   const sig  = trySign(API, body, a1);
@@ -114,7 +110,6 @@ async function main() {
     'cookie':        cookieStr,
   };
 
-  process.stderr.write(`[capture] POST https://as.xiaohongshu.com${API}\n`);
   let res;
   try {
     res = await httpsRequest('POST', `https://as.xiaohongshu.com${API}`, reqHeaders, body);
@@ -123,69 +118,52 @@ async function main() {
     process.exit(1);
   }
 
-  process.stderr.write(`[capture] 响应状态: ${res.status}\n`);
-  process.stderr.write(`[capture] 响应头: ${JSON.stringify(res.headers).slice(0, 300)}\n`);
-  process.stderr.write(`[capture] 响应体前300字符: ${res.body.slice(0, 300)}\n`);
-
   let scriptContent = null;
   let secPoisonId    = null;
 
-  // ── 尝试解析 JSON，提取 data.data（scripting 标准格式）──────────────────
   if (!looksLikeJs(res.body)) {
     try {
       const json = JSON.parse(res.body);
-
-      // 标准格式：{code:0, data:{data:"(function(){...})", secPoisonId:"..."}}
       if (json.data && json.data.data) {
         scriptContent = json.data.data;
         secPoisonId   = json.data.secPoisonId || '';
-        process.stderr.write(`[capture] ✓ 提取 data.data (${scriptContent.length} 字节)\n`);
-        if (secPoisonId) {
-          process.stderr.write(`[capture] ✓ secPoisonId = ${secPoisonId}\n`);
-        }
       } else {
-        // 其他 JSON 格式，尝试 url 字段
         const scriptUrl =
           (json.data && (json.data.url || json.data.scriptUrl)) ||
           json.url || json.scriptUrl;
         if (scriptUrl) {
-          process.stderr.write(`[capture] 发现脚本URL: ${scriptUrl}\n`);
           const sr = await httpsRequest('GET', scriptUrl, { cookie: cookieStr });
-          process.stderr.write(`[capture] 脚本URL响应: ${sr.status}, ${sr.body.length} 字节\n`);
           scriptContent = sr.body;
         }
       }
-    } catch (_) {
-      // 不是 JSON，继续往下
-    }
+    } catch (_) {}
   }
 
-  // ── 响应体本身就是 JS ────────────────────────────────────────────────────
-  if (!scriptContent && looksLikeJs(res.body)) {
-    scriptContent = res.body;
-    process.stderr.write(`[capture] 响应体即JS\n`);
-  }
-
-  // ── 兜底：保存原始响应体供人工分析 ─────────────────────────────────────
-  if (!scriptContent) {
-    scriptContent = '// raw response — 请手工检查格式\n' + res.body;
-    process.stderr.write(`[capture] 格式未知，保存原始响应体\n`);
-  }
+  if (!scriptContent && looksLikeJs(res.body)) scriptContent = res.body;
+  if (!scriptContent) scriptContent = '// raw response\n' + res.body;
 
   fs.writeFileSync(RAW_JS_PATH, scriptContent, 'utf-8');
-  process.stdout.write(`[capture] scripting_raw.js 已保存 (${scriptContent.length} 字节)\n`);
   if (secPoisonId) {
-    // 同时保存 secPoisonId 供 Python 侧读取
-    fs.writeFileSync(
-      path.join(BASE_DIR, 'sec_poison_id.txt'),
-      secPoisonId,
-      'utf-8'
-    );
-    process.stdout.write(`[capture] sec_poison_id.txt 已保存: ${secPoisonId}\n`);
+    fs.writeFileSync(path.join(BASE_DIR, 'sec_poison_id.txt'), secPoisonId, 'utf-8');
+  }
+  return { ok: true, secPoisonId: secPoisonId || '' };
+}
+
+// ─── 独立运行入口 ─────────────────────────────────────────────────────────────
+async function main() {
+  const cookieStr = process.argv[2] || '';
+  const r = await captureScripting(cookieStr);
+  if (r && r.ok) {
+    process.stdout.write(`[capture] 完成，secPoisonId=${r.secPoisonId}\n`);
   }
 }
 
-main().catch(e => {
-  process.stderr.write(`[capture] 未捕获异常: ${e.stack || e.message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(e => {
+    process.stderr.write(`[capture] 未捕获异常: ${e.stack || e.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = { captureScripting };
+

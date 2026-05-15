@@ -1,4 +1,11 @@
 {
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "batch": "node main.js --batch",
+    "test-run": "node main.js --test",
+    "fresh": "node main.js --fresh"
+  },
   "dependencies": {
     "crypto-js": "^4.2.0",
     "jsdom": "^29.1.1"

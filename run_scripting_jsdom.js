@@ -1,4 +1,4 @@
-/**
+﻿/**
  * run_scripting_jsdom.js
  *
  * 在 jsdom 沙盒中执行 as.xiaohongshu.com/api/sec/v1/scripting 返回的安全JS，
@@ -53,11 +53,9 @@ function trySign(api, bodyStr, a1) {
 async function getScriptContent(cookieStr) {
   // 优先本地缓存
   if (fs.existsSync(RAW_JS_PATH) && fs.statSync(RAW_JS_PATH).size > 100) {
-    process.stderr.write(`[jsdom] 使用本地 scripting_raw.js\n`);
     return fs.readFileSync(RAW_JS_PATH, 'utf-8');
   }
 
-  process.stderr.write(`[jsdom] 在线获取 scripting JS...\n`);
   const cookies = parseCookies(cookieStr);
   const a1      = cookies['a1'] || '';
   const API     = '/api/sec/v1/scripting';
@@ -87,7 +85,6 @@ async function getScriptContent(cookieStr) {
       res.on('data', d => chunks.push(d));
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf-8');
-        process.stderr.write(`[jsdom] scripting 响应: ${res.statusCode}, ${text.length} 字节\n`);
         // 尝试 JSON → data.data （标准格式）
         try {
           const json = JSON.parse(text);
@@ -129,9 +126,8 @@ function parseCookieWrite(val) {
   return { name: kv.slice(0, idx).trim(), value: kv.slice(idx + 1).trim() };
 }
 
-// ─── 主流程 ──────────────────────────────────────────────────────────────────
-async function main() {
-  const cookieStr = process.argv[2] || '';
+// ─── 核心逻辑（可被 main.js 导入） ───────────────────────────────────────────
+async function runScriptingJsdom(cookieStr) {
 
   let scriptContent;
   try {
@@ -219,7 +215,6 @@ async function main() {
               ? function() { return origDesc.get.call(window.document); }
               : undefined,
             set(val) {
-              process.stderr.write(`[jsdom] cookie 写入: ${String(val).slice(0, 120)}\n`);
               const parsed = parseCookieWrite(String(val));
               if (parsed) {
                 result.all_new_cookies[parsed.name] = parsed.value;
@@ -240,7 +235,6 @@ async function main() {
 
         // ── 定义 seccallback（JSONP 式回调） ────────────────────────────
         window.seccallback = function(data) {
-          process.stderr.write(`[jsdom] seccallback: ${JSON.stringify(data).slice(0, 300)}\n`);
           result.callbackData = data;
           if (typeof data === 'string' && data.length > 0) {
             // seccallback 直接返回 websectiga 字符串
@@ -288,9 +282,7 @@ async function main() {
               configurable: true,
             });
           }
-          process.stderr.write('[jsdom] crypto.subtle 已注入\n');
         } catch (e) {
-          process.stderr.write(`[jsdom] crypto 注入失败: ${e.message}\n`);
         }
 
         // ── Canvas stub（Canvas 指纹 fallback，避免 toDataURL 报错）──
@@ -324,7 +316,6 @@ async function main() {
   // ── 执行 scripting JS ──────────────────────────────────────────────────────
   try {
     window.eval(scriptContent);
-    process.stderr.write(`[jsdom] 脚本执行完毕，等待回调...\n`);
   } catch (e) {
     process.stderr.write(`[jsdom] 脚本执行错误: ${e.message}\n`);
     result.error = e.message;
@@ -341,7 +332,6 @@ async function main() {
   if (!result.success) {
     try {
       const allCookies = window.document.cookie || '';
-      process.stderr.write(`[jsdom] 当前 document.cookie: ${allCookies.slice(0, 300)}\n`);
       const afterCookies = parseCookies(allCookies);
       if (afterCookies.websectiga) {
         result.websectiga = afterCookies.websectiga;
@@ -360,16 +350,25 @@ async function main() {
     const poisonPath = path.join(BASE_DIR, 'sec_poison_id.txt');
     if (fs.existsSync(poisonPath)) {
       result.sec_poison_id = fs.readFileSync(poisonPath, 'utf-8').trim();
-      process.stderr.write(`[jsdom] sec_poison_id 从文件读取: ${result.sec_poison_id}\n`);
     }
   }
 
   try { window.close(); } catch (_) {}
 
-  // 只向 stdout 输出 JSON，stderr 给 Python 的调试日志
+  return result;
+}
+
+// ─── 独立运行入口 ─────────────────────────────────────────────────────────────
+async function main() {
+  const cookieStr = process.argv[2] || '';
+  const result = await runScriptingJsdom(cookieStr);
   process.stdout.write(JSON.stringify(result) + '\n');
 }
 
-main().catch(e => {
-  process.stdout.write(JSON.stringify({ success: false, error: e.stack || e.message, websectiga: null }) + '\n');
-});
+if (require.main === module) {
+  main().catch(e => {
+    process.stdout.write(JSON.stringify({ success: false, error: e.stack || e.message, websectiga: null }) + '\n');
+  });
+}
+
+module.exports = { runScriptingJsdom };
